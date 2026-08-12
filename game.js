@@ -12,9 +12,6 @@ const ui = {
   soundButton: document.getElementById("soundButton"),
   finalScore: document.getElementById("finalScore"),
   highScore: document.getElementById("highScore"),
-  leftButton: document.getElementById("leftButton"),
-  rightButton: document.getElementById("rightButton"),
-  punchButton: document.getElementById("punchButton"),
 };
 
 const W = canvas.width;
@@ -423,20 +420,6 @@ function toggleSound() {
   } else stopBgm();
 }
 
-function bindHold(button, keyName) {
-  const on = event => { event.preventDefault(); keys[keyName] = true; button.classList.add("active"); };
-  const off = event => { event.preventDefault(); keys[keyName] = false; button.classList.remove("active"); };
-  button.addEventListener("pointerdown", on);
-  button.addEventListener("pointerup", off);
-  button.addEventListener("pointercancel", off);
-  button.addEventListener("pointerleave", off);
-}
-
-bindHold(ui.leftButton, "left");
-bindHold(ui.rightButton, "right");
-ui.punchButton.addEventListener("pointerdown", event => { event.preventDefault(); punch(); ui.punchButton.classList.add("active"); });
-ui.punchButton.addEventListener("pointerup", () => ui.punchButton.classList.remove("active"));
-ui.punchButton.addEventListener("pointercancel", () => ui.punchButton.classList.remove("active"));
 ui.startButton.addEventListener("click", startGame);
 ui.retryButton.addEventListener("click", startGame);
 ui.soundButton.addEventListener("click", toggleSound);

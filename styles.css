@@ -19,11 +19,10 @@ html, body {
 body {
   display: grid;
   place-items: center;
-  padding: 12px;
+  padding: 8px 12px;
   color: var(--cream);
   font-family: "Courier New", monospace;
   image-rendering: pixelated;
-  touch-action: manipulation;
   background-image:
     linear-gradient(45deg, #172043 25%, transparent 25%),
     linear-gradient(-45deg, #172043 25%, transparent 25%),
@@ -35,20 +34,22 @@ body {
 
 button { font: inherit; }
 
-.game-shell { width: min(100%, 1160px); }
+.game-shell {
+  width: min(100%, 1440px, calc((100vh - 72px) * 16 / 9));
+}
 
 .game-header {
   display: flex;
   align-items: end;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 5px;
+  margin-bottom: 3px;
 }
 
 h1 {
   margin: 0;
   color: white;
-  font-size: clamp(13px, 2.5vw, 23px);
+  font-size: clamp(12px, 1.7vw, 20px);
   line-height: .9;
   letter-spacing: .08em;
   text-shadow: 3px 3px 0 #2b3971;
@@ -109,45 +110,12 @@ canvas {
 .main-button { min-width: 190px; font-size: 17px; }
 .sound-button { flex: none; min-height: 34px; padding: 5px 10px; font-size: 13px; }
 
-.controls {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 12px;
-  padding: 2px 1vw;
-}
-
-.direction-controls { display: flex; gap: 10px; }
-.control-button {
-  width: clamp(56px, 10vw, 78px);
-  height: clamp(48px, 8vw, 62px);
-  border: 3px solid #777fa9;
-  border-bottom: 7px solid #050817;
-  border-radius: 10px;
-  color: white;
-  background: #252c50;
-  font-size: clamp(20px, 4vw, 31px);
-  font-weight: 900;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: none;
-}
-
-.control-button.active, .control-button:active { transform: translateY(4px); border-bottom-width: 3px; background: #3c4779; }
-.punch-button { border-color: #ff8090; border-bottom-color: #670d24; border-radius: 50%; background: var(--red); font-size: clamp(12px, 2.5vw, 18px); }
-.punch-button span { display: block; font-size: .6em; }
-.keyboard-help { margin: 7px 0 0; text-align: center; color: #8f9cc5; font-size: 12px; }
-
-@media (hover: hover) and (pointer: fine) and (min-width: 700px) {
-  .controls { opacity: .8; }
-}
+.keyboard-help { margin: 6px 0 0; text-align: center; color: #aab4da; font-size: 12px; }
+.keyboard-help kbd { padding: 2px 6px; border: 1px solid #6d78a4; border-bottom-width: 3px; color: white; background: #252c50; }
 
 @media (max-height: 650px) and (orientation: landscape) {
-  body { padding: 5px 12px; }
-  .game-shell { width: min(90vw, 1040px); }
-  .game-header { position: absolute; left: 12px; top: 8px; z-index: 2; display: block; }
-  .sound-button { margin-top: 12px; }
-  .controls { position: fixed; inset: auto 14px 10px; margin: 0; padding: 0; pointer-events: none; }
-  .controls button { pointer-events: auto; opacity: .8; }
-  .keyboard-help { display: none; }
+  body { padding: 4px 10px; }
+  .game-shell { width: min(100%, calc((100vh - 50px) * 16 / 9)); }
+  .game-header { margin-bottom: 2px; }
+  .keyboard-help { margin-top: 4px; font-size: 10px; }
 }
