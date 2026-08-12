@@ -1,0 +1,153 @@
+:root {
+  color-scheme: dark;
+  --ink: #12172f;
+  --cream: #fff4c7;
+  --yellow: #ffd447;
+  --red: #ed3d59;
+  --blue: #3d6cb4;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  min-height: 100%;
+  margin: 0;
+  overscroll-behavior: none;
+  background: #12172f;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  color: var(--cream);
+  font-family: "Courier New", monospace;
+  image-rendering: pixelated;
+  touch-action: manipulation;
+  background-image:
+    linear-gradient(45deg, #172043 25%, transparent 25%),
+    linear-gradient(-45deg, #172043 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #172043 75%),
+    linear-gradient(-45deg, transparent 75%, #172043 75%);
+  background-size: 32px 32px;
+  background-position: 0 0, 0 16px, 16px -16px, -16px 0;
+}
+
+button { font: inherit; }
+
+.game-shell { width: min(100%, 1160px); }
+
+.game-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 5px;
+}
+
+h1 {
+  margin: 0;
+  color: white;
+  font-size: clamp(13px, 2.5vw, 23px);
+  line-height: .9;
+  letter-spacing: .08em;
+  text-shadow: 3px 3px 0 #2b3971;
+}
+
+h1 span { color: var(--yellow); }
+
+.screen-frame {
+  position: relative;
+  overflow: hidden;
+  border: 5px solid #5364a0;
+  border-radius: 4px;
+  box-shadow: 0 0 0 4px var(--ink), 0 7px 0 #080b1a;
+  background: #4a87d3;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  image-rendering: pixelated;
+}
+
+.overlay-panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  text-align: center;
+  background: rgb(13 20 52 / 76%);
+  text-shadow: 2px 2px 0 var(--ink);
+}
+
+.overlay-panel.hidden { display: none; }
+.overlay-panel h2 { margin: 3px 0 12px; color: var(--yellow); font-size: clamp(25px, 6vw, 52px); line-height: 1.05; }
+.overlay-panel p { margin: 5px 0 18px; font-weight: bold; font-size: clamp(12px, 2vw, 19px); line-height: 1.6; }
+.overlay-panel strong { color: #ff8799; }
+.small-title { color: #b5f2ff; letter-spacing: .25em; }
+.small-title.danger { color: #ff6078; }
+
+.pixel-button {
+  min-height: 42px;
+  border: 0;
+  border-bottom: 6px solid #9b631f;
+  padding: 8px 16px;
+  color: var(--ink);
+  background: var(--yellow);
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 0 0 3px var(--ink);
+}
+
+.pixel-button:active { transform: translateY(4px); border-bottom-width: 2px; }
+.main-button { min-width: 190px; font-size: 17px; }
+.sound-button { flex: none; min-height: 34px; padding: 5px 10px; font-size: 13px; }
+
+.controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+  padding: 2px 1vw;
+}
+
+.direction-controls { display: flex; gap: 10px; }
+.control-button {
+  width: clamp(56px, 10vw, 78px);
+  height: clamp(48px, 8vw, 62px);
+  border: 3px solid #777fa9;
+  border-bottom: 7px solid #050817;
+  border-radius: 10px;
+  color: white;
+  background: #252c50;
+  font-size: clamp(20px, 4vw, 31px);
+  font-weight: 900;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.control-button.active, .control-button:active { transform: translateY(4px); border-bottom-width: 3px; background: #3c4779; }
+.punch-button { border-color: #ff8090; border-bottom-color: #670d24; border-radius: 50%; background: var(--red); font-size: clamp(12px, 2.5vw, 18px); }
+.punch-button span { display: block; font-size: .6em; }
+.keyboard-help { margin: 7px 0 0; text-align: center; color: #8f9cc5; font-size: 12px; }
+
+@media (hover: hover) and (pointer: fine) and (min-width: 700px) {
+  .controls { opacity: .8; }
+}
+
+@media (max-height: 650px) and (orientation: landscape) {
+  body { padding: 5px 12px; }
+  .game-shell { width: min(90vw, 1040px); }
+  .game-header { position: absolute; left: 12px; top: 8px; z-index: 2; display: block; }
+  .sound-button { margin-top: 12px; }
+  .controls { position: fixed; inset: auto 14px 10px; margin: 0; padding: 0; pointer-events: none; }
+  .controls button { pointer-events: auto; opacity: .8; }
+  .keyboard-help { display: none; }
+}

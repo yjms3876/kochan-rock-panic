@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="theme-color" content="#18264a" />
+    <title>こーちゃんのロックパニック！</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="game-shell">
+      <header class="game-header">
+        <h1>こーちゃんの<br /><span>ロックパニック！</span></h1>
+        <button id="soundButton" class="pixel-button sound-button" type="button" aria-label="音を切り替える">♪ ON</button>
+      </header>
+
+      <section class="screen-frame" aria-label="ゲーム画面">
+        <canvas id="gameCanvas" width="960" height="540"></canvas>
+
+        <div id="startPanel" class="overlay-panel">
+          <p class="small-title">ROCK PANIC</p>
+          <h2>こーちゃんを<br />まもれ！</h2>
+          <p>岩をよけて、パンチでこわせ！<br /><strong>鉄の岩には気をつけろ！</strong></p>
+          <button id="startButton" class="pixel-button main-button" type="button">ゲームスタート</button>
+        </div>
+
+        <div id="gameOverPanel" class="overlay-panel hidden">
+          <p class="small-title danger">GAME OVER</p>
+          <h2>こーちゃんが<br />たおれた！</h2>
+          <p>スコア <strong id="finalScore">00000</strong><br />ハイスコア <strong id="highScore">00000</strong></p>
+          <button id="retryButton" class="pixel-button main-button" type="button">もういちど</button>
+        </div>
+      </section>
+
+      <section class="controls" aria-label="操作ボタン">
+        <button id="punchButton" class="control-button punch-button" type="button" aria-label="パンチ">PUNCH<span>パンチ</span></button>
+        <div class="direction-controls">
+          <button id="leftButton" class="control-button" type="button" aria-label="左へ移動">◀</button>
+          <button id="rightButton" class="control-button" type="button" aria-label="右へ移動">▶</button>
+        </div>
+      </section>
+
+      <p class="keyboard-help">PC：← → で移動　SPACE でパンチ</p>
+    </main>
+    <script src="game.js"></script>
+  </body>
+</html>
