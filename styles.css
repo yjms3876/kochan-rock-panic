@@ -49,13 +49,14 @@ button { font: inherit; }
 h1 {
   margin: 0;
   color: white;
-  font-size: clamp(12px, 1.7vw, 20px);
-  line-height: .9;
+  font-size: clamp(12px, 1.65vw, 20px);
+  line-height: 1;
   letter-spacing: .08em;
+  white-space: nowrap;
   text-shadow: 3px 3px 0 #2b3971;
 }
 
-h1 span { color: var(--yellow); }
+h1 span { margin-left: .35em; color: var(--yellow); }
 
 .screen-frame {
   position: relative;
