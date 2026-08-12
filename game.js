@@ -9,7 +9,6 @@ const ui = {
   gameOverPanel: document.getElementById("gameOverPanel"),
   startButton: document.getElementById("startButton"),
   retryButton: document.getElementById("retryButton"),
-  soundButton: document.getElementById("soundButton"),
   finalScore: document.getElementById("finalScore"),
   highScore: document.getElementById("highScore"),
 };
@@ -411,18 +410,8 @@ function stopBgm() {
   bgmTimer = null;
 }
 
-function toggleSound() {
-  soundOn = !soundOn;
-  ui.soundButton.textContent = soundOn ? "♪ ON" : "♪ OFF";
-  if (soundOn) {
-    initAudio();
-    if (state === "playing") startBgm();
-  } else stopBgm();
-}
-
 ui.startButton.addEventListener("click", startGame);
 ui.retryButton.addEventListener("click", startGame);
-ui.soundButton.addEventListener("click", toggleSound);
 
 window.addEventListener("keydown", event => {
   if (["ArrowLeft", "ArrowRight", "Space"].includes(event.code)) event.preventDefault();
