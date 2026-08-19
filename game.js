@@ -22,6 +22,7 @@ let rocks = [];
 let items = [];
 let particles = [];
 let scorePopups = [];
+let damagePopups = [];
 let score = 0;
 let elapsed = 0;
 let spawnTimer = 0;
@@ -35,7 +36,7 @@ let bgmTimer = null;
 const player = {
   x: 450, y: GROUND_Y - 78, w: 54, h: 78,
   speed: 310, facing: 1, punchTime: 0, punchCooldown: 0, defeated: false,
-  helmet: false, gloveHits: 0,
+  helmet: false, gloveHits: 0, health: 150, invulnerable: 0,
 };
 
 function resetGame() {
@@ -43,6 +44,7 @@ function resetGame() {
   items = [];
   particles = [];
   scorePopups = [];
+  damagePopups = [];
   score = 0;
   elapsed = 0;
   spawnTimer = 0.55;
@@ -56,6 +58,8 @@ function resetGame() {
   player.defeated = false;
   player.helmet = false;
   player.gloveHits = 0;
+  player.health = 150;
+  player.invulnerable = 0;
   state = "playing";
   ui.startPanel.classList.add("hidden");
   ui.gameOverPanel.classList.add("hidden");
@@ -163,10 +167,40 @@ function absorbRockHit(rock) {
   return true;
 }
 
+function getRockDamage(rock) {
+  if (rock.iron) return 150;
+  if (rock.size < 42) return 20;
+  if (rock.size < 60) return 50;
+  return 100;
+}
+
+function takeRockDamage(rock) {
+  if (absorbRockHit(rock)) return;
+  if (player.invulnerable > 0) return;
+  const damage = getRockDamage(rock);
+  player.health = Math.max(0, player.health - damage);
+  damagePopups.push({
+    x: player.x + player.w / 2,
+    y: player.y + 10,
+    damage,
+    life: 0.9,
+  });
+  shake = Math.min(16, 5 + damage / 12);
+  makeDebris(player.x + player.w / 2, player.y + 22, rock.iron ? "#8d9aaa" : "#d95656");
+  if (player.health <= 0) {
+    gameOver(rock.iron);
+    return;
+  }
+  player.invulnerable = 1;
+  soundDamage(damage);
+}
+
 function update(dt) {
   if (shake > 0) shake = Math.max(0, shake - dt * 45);
   if (state !== "playing") {
     updateParticles(dt);
+    updateScorePopups(dt);
+    updateDamagePopups(dt);
     return;
   }
 
@@ -174,6 +208,7 @@ function update(dt) {
   score += dt * 10;
   player.punchTime = Math.max(0, player.punchTime - dt);
   player.punchCooldown = Math.max(0, player.punchCooldown - dt);
+  player.invulnerable = Math.max(0, player.invulnerable - dt);
 
   let direction = 0;
   if (keys.left) direction -= 1;
@@ -233,12 +268,10 @@ function update(dt) {
           soundIronBreak();
           continue;
         }
-        if (absorbRockHit(rock)) {
-          rocks.splice(i, 1);
-          continue;
-        }
-        gameOver(true);
-        return;
+        takeRockDamage(rock);
+        rocks.splice(i, 1);
+        if (state !== "playing") return;
+        continue;
       }
       makeDebris(rock.x + rock.size / 2, rock.y + rock.size / 2, "#8e684b");
       addScorePopup(rock.x + rock.size / 2, rock.y, 75);
@@ -249,17 +282,16 @@ function update(dt) {
     }
 
     if (overlaps(body, hitbox)) {
-      if (absorbRockHit(rock)) {
-        rocks.splice(i, 1);
-        continue;
-      }
-      gameOver(rock.iron);
-      return;
+      takeRockDamage(rock);
+      rocks.splice(i, 1);
+      if (state !== "playing") return;
+      continue;
     }
     if (rock.y > H + rock.size) rocks.splice(i, 1);
   }
   updateParticles(dt);
   updateScorePopups(dt);
+  updateDamagePopups(dt);
 }
 
 function addScorePopup(x, y, points) {
@@ -306,6 +338,15 @@ function updateScorePopups(dt) {
   }
 }
 
+function updateDamagePopups(dt) {
+  for (let i = damagePopups.length - 1; i >= 0; i -= 1) {
+    const popup = damagePopups[i];
+    popup.life -= dt;
+    popup.y -= 36 * dt;
+    if (popup.life <= 0) damagePopups.splice(i, 1);
+  }
+}
+
 function draw() {
   ctx.save();
   if (shake > 0) ctx.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
@@ -314,8 +355,24 @@ function draw() {
   items.forEach(drawItem);
   particles.forEach(p => { ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.size, p.size); });
   drawScorePopups();
+  drawDamagePopups();
   drawPlayer();
   drawHud();
+  ctx.restore();
+}
+
+function drawDamagePopups() {
+  ctx.save();
+  ctx.font = "bold 25px monospace";
+  ctx.textAlign = "center";
+  for (const popup of damagePopups) {
+    ctx.globalAlpha = Math.min(1, popup.life * 2);
+    const label = `-${popup.damage}`;
+    ctx.fillStyle = "#12172f";
+    ctx.fillText(label, popup.x + 2, popup.y + 2);
+    ctx.fillStyle = "#ff5b64";
+    ctx.fillText(label, popup.x, popup.y);
+  }
   ctx.restore();
 }
 
@@ -368,6 +425,7 @@ function drawBackground() {
 }
 
 function drawPlayer() {
+  if (!player.defeated && player.invulnerable > 0 && Math.floor(player.invulnerable * 14) % 2 === 0) return;
   ctx.save();
   const x = Math.round(player.x);
   const y = Math.round(player.y);
@@ -504,18 +562,25 @@ function drawRock(rock) {
 
 function drawHud() {
   ctx.fillStyle = "rgba(18,23,47,.78)";
-  ctx.fillRect(14, 13, 245, 94);
+  ctx.fillRect(14, 13, 265, 126);
   ctx.fillStyle = "#fff4c7";
   ctx.font = "bold 22px monospace";
   ctx.fillText("SCORE " + String(Math.floor(score)).padStart(5, "0"), 27, 40);
   ctx.fillStyle = "#ffd447";
   ctx.font = "bold 16px monospace";
   ctx.fillText("こーちゃん", 27, 63);
+  ctx.fillStyle = "#fff4c7";
+  ctx.font = "bold 13px monospace";
+  ctx.fillText(`HP ${String(player.health).padStart(3, " ")} / 150`, 27, 83);
+  ctx.fillStyle = "#26304f";
+  ctx.fillRect(27, 91, 228, 13);
+  ctx.fillStyle = "#43c85a";
+  ctx.fillRect(29, 93, 224 * (player.health / 150), 9);
   ctx.font = "bold 14px monospace";
   ctx.fillStyle = player.helmet ? "#ffd447" : "#8f9cc5";
-  ctx.fillText(`HELMET × ${player.helmet ? 1 : 0}`, 27, 84);
+  ctx.fillText(`HELMET × ${player.helmet ? 1 : 0}`, 27, 125);
   ctx.fillStyle = player.gloveHits > 0 ? "#ff7b90" : "#8f9cc5";
-  ctx.fillText(`GLOVE  × ${player.gloveHits}`, 136, 84);
+  ctx.fillText(`GLOVE  × ${player.gloveHits}`, 146, 125);
   if (state === "playing" && elapsed < 7) {
     ctx.fillStyle = "rgba(18,23,47,.72)";
     ctx.fillRect(W - 257, 14, 243, 43);
@@ -546,6 +611,11 @@ function tone(freq, duration, type = "square", volume = .045, when = 0) {
 function soundPunch() { tone(145, .08, "square", .07); tone(90, .12, "square", .045, .04); }
 function soundBreak() { [260, 190, 125].forEach((f, i) => tone(f, .11, "square", .055, i * .045)); }
 function soundCrash() { [170, 110, 65].forEach((f, i) => tone(f, .28, "sawtooth", .08, i * .12)); }
+function soundDamage(damage) {
+  const base = damage >= 100 ? 95 : damage >= 50 ? 125 : 165;
+  tone(base, .18, "sawtooth", .06);
+  tone(base * 0.7, .2, "square", .04, .06);
+}
 function soundMetalCrash() {
   [920, 1380, 690, 1120].forEach((f, i) => tone(f, .3, "square", .055, i * .045));
   tone(180, .42, "sawtooth", .035);
