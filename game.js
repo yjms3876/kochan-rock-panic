@@ -19,11 +19,13 @@ const GROUND_Y = 466;
 const keys = { left: false, right: false };
 let state = "title";
 let rocks = [];
+let items = [];
 let particles = [];
 let scorePopups = [];
 let score = 0;
 let elapsed = 0;
 let spawnTimer = 0;
+let itemSpawnTimer = 0;
 let lastTime = 0;
 let shake = 0;
 let soundOn = true;
@@ -33,15 +35,18 @@ let bgmTimer = null;
 const player = {
   x: 450, y: GROUND_Y - 78, w: 54, h: 78,
   speed: 310, facing: 1, punchTime: 0, punchCooldown: 0, defeated: false,
+  helmet: false, gloveHits: 0,
 };
 
 function resetGame() {
   rocks = [];
+  items = [];
   particles = [];
   scorePopups = [];
   score = 0;
   elapsed = 0;
   spawnTimer = 0.55;
+  itemSpawnTimer = 10 + Math.random() * 5;
   shake = 0;
   player.x = W / 2 - player.w / 2;
   player.y = GROUND_Y - player.h;
@@ -49,6 +54,8 @@ function resetGame() {
   player.punchTime = 0;
   player.punchCooldown = 0;
   player.defeated = false;
+  player.helmet = false;
+  player.gloveHits = 0;
   state = "playing";
   ui.startPanel.classList.add("hidden");
   ui.gameOverPanel.classList.add("hidden");
@@ -102,6 +109,60 @@ function spawnRock() {
   });
 }
 
+function spawnItem() {
+  const type = Math.random() < 0.5 ? "helmet" : "glove";
+  const size = 38;
+  items.push({
+    type,
+    x: 28 + Math.random() * (W - size - 56),
+    y: -size,
+    size,
+    speed: 105,
+    landed: false,
+    life: 7,
+    pulse: Math.random() * Math.PI * 2,
+  });
+}
+
+function getItem() {
+  if (state !== "playing" || player.defeated) return;
+  const pickupBox = {
+    x: player.x - 36,
+    y: player.y - 30,
+    w: player.w + 72,
+    h: player.h + 66,
+  };
+  let nearestIndex = -1;
+  let nearestDistance = Infinity;
+  for (let i = 0; i < items.length; i += 1) {
+    const item = items[i];
+    const itemBox = { x: item.x, y: item.y, w: item.size, h: item.size };
+    if (!overlaps(pickupBox, itemBox)) continue;
+    const distance = Math.abs(item.x + item.size / 2 - (player.x + player.w / 2));
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestIndex = i;
+    }
+  }
+  if (nearestIndex < 0) return;
+  const item = items[nearestIndex];
+  if (item.type === "helmet") player.helmet = true;
+  else player.gloveHits = 3;
+  makeDebris(item.x + item.size / 2, item.y + item.size / 2, item.type === "helmet" ? "#ffd447" : "#ed3d59");
+  items.splice(nearestIndex, 1);
+  soundItemGet();
+}
+
+function absorbRockHit(rock) {
+  if (!player.helmet) return false;
+  player.helmet = false;
+  shake = 10;
+  makeDebris(player.x + player.w / 2, player.y + 8, "#ffd447");
+  makeDebris(rock.x + rock.size / 2, rock.y + rock.size / 2, rock.iron ? "#8d9aaa" : "#8e684b");
+  soundHelmetBreak();
+  return true;
+}
+
 function update(dt) {
   if (shake > 0) shake = Math.max(0, shake - dt * 45);
   if (state !== "playing") {
@@ -131,6 +192,27 @@ function update(dt) {
     if (elapsed > 30 && Math.random() < Math.min(0.38, elapsed / 180)) spawnRock();
   }
 
+  itemSpawnTimer -= dt;
+  if (itemSpawnTimer <= 0) {
+    spawnItem();
+    itemSpawnTimer = 15 + Math.random() * 10;
+  }
+
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    const item = items[i];
+    item.pulse += dt * 5;
+    if (!item.landed) {
+      item.y += item.speed * dt;
+      if (item.y + item.size >= GROUND_Y - 3) {
+        item.y = GROUND_Y - item.size - 3;
+        item.landed = true;
+      }
+    } else {
+      item.life -= dt;
+      if (item.life <= 0) items.splice(i, 1);
+    }
+  }
+
   const body = { x: player.x + 8, y: player.y + 5, w: player.w - 16, h: player.h - 5 };
   const punchBoxes = getPunchBoxes();
 
@@ -142,15 +224,24 @@ function update(dt) {
 
     if (player.punchTime > 0 && punchBoxes.some(box => overlaps(box, hitbox))) {
       if (rock.iron) {
+        if (player.gloveHits > 0) {
+          player.gloveHits -= 1;
+          makeDebris(rock.x + rock.size / 2, rock.y + rock.size / 2, "#8d9aaa");
+          addScorePopup(rock.x + rock.size / 2, rock.y, 100);
+          rocks.splice(i, 1);
+          score += 100;
+          soundIronBreak();
+          continue;
+        }
+        if (absorbRockHit(rock)) {
+          rocks.splice(i, 1);
+          continue;
+        }
         gameOver(true);
         return;
       }
       makeDebris(rock.x + rock.size / 2, rock.y + rock.size / 2, "#8e684b");
-      scorePopups.push({
-        x: rock.x + rock.size / 2,
-        y: rock.y,
-        life: 0.9,
-      });
+      addScorePopup(rock.x + rock.size / 2, rock.y, 75);
       rocks.splice(i, 1);
       score += 75;
       soundBreak();
@@ -158,6 +249,10 @@ function update(dt) {
     }
 
     if (overlaps(body, hitbox)) {
+      if (absorbRockHit(rock)) {
+        rocks.splice(i, 1);
+        continue;
+      }
       gameOver(rock.iron);
       return;
     }
@@ -165,6 +260,10 @@ function update(dt) {
   }
   updateParticles(dt);
   updateScorePopups(dt);
+}
+
+function addScorePopup(x, y, points) {
+  scorePopups.push({ x, y, points, life: 0.9 });
 }
 
 function getPunchBoxes() {
@@ -212,6 +311,7 @@ function draw() {
   if (shake > 0) ctx.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
   drawBackground();
   rocks.forEach(drawRock);
+  items.forEach(drawItem);
   particles.forEach(p => { ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.size, p.size); });
   drawScorePopups();
   drawPlayer();
@@ -226,9 +326,10 @@ function drawScorePopups() {
   for (const popup of scorePopups) {
     ctx.globalAlpha = Math.min(1, popup.life * 2);
     ctx.fillStyle = "#12172f";
-    ctx.fillText("+75", popup.x + 2, popup.y + 2);
+    const label = `+${popup.points}`;
+    ctx.fillText(label, popup.x + 2, popup.y + 2);
     ctx.fillStyle = "#ffd447";
-    ctx.fillText("+75", popup.x, popup.y);
+    ctx.fillText(label, popup.x, popup.y);
   }
   ctx.restore();
 }
@@ -285,6 +386,14 @@ function drawKochan(x, y, facing) {
   ctx.fillStyle = "#1f315e";
   ctx.fillRect(x + 9, y, 36, 10);
   ctx.fillRect(x + 3, y + 9, 48, 15);
+  if (player.helmet) {
+    ctx.fillStyle = "#ffd447";
+    ctx.fillRect(x + 7, y - 7, 40, 9);
+    ctx.fillRect(x + 3, y + 1, 48, 12);
+    ctx.fillStyle = "#b87022";
+    ctx.fillRect(x + 7, y + 10, 8, 7);
+    ctx.fillRect(x + 43, y + 10, 8, 7);
+  }
   ctx.fillStyle = "#f0ba91";
   ctx.fillRect(x + 10, y + 18, 34, 27);
   ctx.fillRect(x + 18, y + 43, 20, 8);
@@ -302,7 +411,12 @@ function drawKochan(x, y, facing) {
     const shoulderX = facing > 0 ? x + 43 : x + 1;
     const fistX = facing > 0 ? x + 39 : x - 3;
     ctx.fillRect(shoulderX, y + 6, 10, 50);
+    ctx.fillStyle = player.gloveHits > 0 ? "#ed3d59" : "#f0ba91";
     ctx.fillRect(fistX, y - 8, 18, 16);
+    if (player.gloveHits > 0) {
+      ctx.fillStyle = "#9c1735";
+      ctx.fillRect(fistX + 3, y + 5, 12, 5);
+    }
   } else {
     ctx.fillRect(x + 46, y + 52, 8, 18);
   }
@@ -314,6 +428,48 @@ function drawKochan(x, y, facing) {
   ctx.fillStyle = "#923267";
   ctx.fillRect(x + 6, y + 86, 19, 7);
   ctx.fillRect(x + 32, y + 86, 19, 7);
+}
+
+function drawItem(item) {
+  const x = Math.round(item.x);
+  const y = Math.round(item.y + (item.landed ? Math.sin(item.pulse) * 2 : 0));
+  const s = item.size;
+  ctx.save();
+  if (item.landed && item.life < 2) ctx.globalAlpha = Math.sin(item.life * 18) > 0 ? 1 : 0.3;
+  ctx.fillStyle = `rgba(255,244,199,${0.18 + (Math.sin(item.pulse) + 1) * 0.1})`;
+  ctx.fillRect(x - 6, y - 6, s + 12, s + 12);
+  if (item.type === "helmet") {
+    ctx.fillStyle = "#ffd447";
+    ctx.fillRect(x + 6, y + 4, s - 12, 9);
+    ctx.fillRect(x + 2, y + 12, s - 4, 15);
+    ctx.fillStyle = "#b87022";
+    ctx.fillRect(x + 2, y + 25, 9, 7);
+    ctx.fillRect(x + s - 11, y + 25, 9, 7);
+  } else {
+    ctx.fillStyle = "#ed3d59";
+    ctx.fillRect(x + 10, y + 2, 18, 20);
+    ctx.fillRect(x + 5, y + 8, 28, 18);
+    ctx.fillStyle = "#9c1735";
+    ctx.fillRect(x + 12, y + 25, 15, 10);
+    ctx.fillStyle = "#ff8a9b";
+    ctx.fillRect(x + 9, y + 7, 8, 6);
+  }
+  if (isItemNearby(item)) {
+    ctx.fillStyle = "#12172f";
+    ctx.fillRect(x - 10, y - 27, s + 20, 19);
+    ctx.fillStyle = "#fff4c7";
+    ctx.font = "bold 14px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("SHIFT", x + s / 2, y - 13);
+  }
+  ctx.restore();
+}
+
+function isItemNearby(item) {
+  return overlaps(
+    { x: player.x - 36, y: player.y - 30, w: player.w + 72, h: player.h + 66 },
+    { x: item.x, y: item.y, w: item.size, h: item.size },
+  );
 }
 
 function drawRock(rock) {
@@ -348,19 +504,24 @@ function drawRock(rock) {
 
 function drawHud() {
   ctx.fillStyle = "rgba(18,23,47,.78)";
-  ctx.fillRect(14, 13, 245, 59);
+  ctx.fillRect(14, 13, 245, 94);
   ctx.fillStyle = "#fff4c7";
   ctx.font = "bold 22px monospace";
   ctx.fillText("SCORE " + String(Math.floor(score)).padStart(5, "0"), 27, 40);
   ctx.fillStyle = "#ffd447";
   ctx.font = "bold 16px monospace";
   ctx.fillText("こーちゃん", 27, 63);
+  ctx.font = "bold 14px monospace";
+  ctx.fillStyle = player.helmet ? "#ffd447" : "#8f9cc5";
+  ctx.fillText(`HELMET × ${player.helmet ? 1 : 0}`, 27, 84);
+  ctx.fillStyle = player.gloveHits > 0 ? "#ff7b90" : "#8f9cc5";
+  ctx.fillText(`GLOVE  × ${player.gloveHits}`, 136, 84);
   if (state === "playing" && elapsed < 7) {
     ctx.fillStyle = "rgba(18,23,47,.72)";
     ctx.fillRect(W - 257, 14, 243, 43);
     ctx.fillStyle = "#eef6ff";
     ctx.font = "bold 15px monospace";
-    ctx.fillText("銀色の鉄岩はこわせない！", W - 247, 41);
+    ctx.fillText("SHIFTでアイテムをゲット！", W - 247, 41);
   }
 }
 
@@ -389,6 +550,16 @@ function soundMetalCrash() {
   [920, 1380, 690, 1120].forEach((f, i) => tone(f, .3, "square", .055, i * .045));
   tone(180, .42, "sawtooth", .035);
 }
+function soundItemGet() {
+  [392, 523, 659].forEach((f, i) => tone(f, .16, "square", .045, i * .07));
+}
+function soundHelmetBreak() {
+  [520, 390, 260].forEach((f, i) => tone(f, .18, "square", .06, i * .05));
+}
+function soundIronBreak() {
+  [1200, 860, 620, 340].forEach((f, i) => tone(f, .22, "square", .06, i * .045));
+  tone(150, .32, "sawtooth", .04);
+}
 
 function startBgm() {
   stopBgm();
@@ -414,10 +585,11 @@ ui.startButton.addEventListener("click", startGame);
 ui.retryButton.addEventListener("click", startGame);
 
 window.addEventListener("keydown", event => {
-  if (["ArrowLeft", "ArrowRight", "Space"].includes(event.code)) event.preventDefault();
+  if (["ArrowLeft", "ArrowRight", "Space", "ShiftLeft", "ShiftRight"].includes(event.code)) event.preventDefault();
   if (event.code === "ArrowLeft") keys.left = true;
   if (event.code === "ArrowRight") keys.right = true;
   if (event.code === "Space" && !event.repeat) punch();
+  if ((event.code === "ShiftLeft" || event.code === "ShiftRight") && !event.repeat) getItem();
   if (event.code === "Enter" && state === "gameover") startGame();
 });
 
