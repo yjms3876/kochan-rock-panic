@@ -23,6 +23,7 @@ let items = [];
 let particles = [];
 let scorePopups = [];
 let damagePopups = [];
+let healPopups = [];
 let score = 0;
 let elapsed = 0;
 let spawnTimer = 0;
@@ -45,6 +46,7 @@ function resetGame() {
   particles = [];
   scorePopups = [];
   damagePopups = [];
+  healPopups = [];
   score = 0;
   elapsed = 0;
   spawnTimer = 0.55;
@@ -101,6 +103,7 @@ function spawnRock() {
   const difficulty = Math.min(elapsed / 75, 1);
   const ironChance = 0.12 + difficulty * 0.11;
   const iron = Math.random() < ironChance;
+  const hasPotion = iron && Math.random() < 0.25;
   const size = iron ? 36 + Math.random() * 27 : 26 + Math.random() * 48;
   rocks.push({
     x: 18 + Math.random() * (W - size - 36),
@@ -108,8 +111,23 @@ function spawnRock() {
     size,
     speed: 125 + Math.random() * 85 + difficulty * 190,
     iron,
+    hasPotion,
     spin: Math.random() * Math.PI * 2,
     spinSpeed: (Math.random() - 0.5) * 2.5,
+  });
+}
+
+function dropPotion(rock) {
+  const size = 34;
+  items.push({
+    type: "potion",
+    x: rock.x + rock.size / 2 - size / 2,
+    y: rock.y + rock.size / 2 - size / 2,
+    size,
+    speed: 125,
+    landed: false,
+    life: 7,
+    pulse: 0,
   });
 }
 
@@ -140,6 +158,7 @@ function getItem() {
   let nearestDistance = Infinity;
   for (let i = 0; i < items.length; i += 1) {
     const item = items[i];
+    if (item.type === "potion" && player.health >= 150) continue;
     const itemBox = { x: item.x, y: item.y, w: item.size, h: item.size };
     if (!overlaps(pickupBox, itemBox)) continue;
     const distance = Math.abs(item.x + item.size / 2 - (player.x + player.w / 2));
@@ -150,11 +169,23 @@ function getItem() {
   }
   if (nearestIndex < 0) return;
   const item = items[nearestIndex];
-  if (item.type === "helmet") player.helmet = true;
-  else player.gloveHits = 3;
-  makeDebris(item.x + item.size / 2, item.y + item.size / 2, item.type === "helmet" ? "#ffd447" : "#ed3d59");
+  if (item.type === "helmet") {
+    player.helmet = true;
+  } else if (item.type === "glove") {
+    player.gloveHits = 3;
+  } else {
+    player.health = Math.min(150, player.health + 50);
+    healPopups.push({
+      x: player.x + player.w / 2,
+      y: player.y + 8,
+      life: 1,
+    });
+  }
+  const itemColor = item.type === "helmet" ? "#ffd447" : item.type === "glove" ? "#ed3d59" : "#43c85a";
+  makeDebris(item.x + item.size / 2, item.y + item.size / 2, itemColor);
   items.splice(nearestIndex, 1);
-  soundItemGet();
+  if (item.type === "potion") soundHeal();
+  else soundItemGet();
 }
 
 function absorbRockHit(rock) {
@@ -201,6 +232,7 @@ function update(dt) {
     updateParticles(dt);
     updateScorePopups(dt);
     updateDamagePopups(dt);
+    updateHealPopups(dt);
     return;
   }
 
@@ -263,6 +295,7 @@ function update(dt) {
           player.gloveHits -= 1;
           makeDebris(rock.x + rock.size / 2, rock.y + rock.size / 2, "#8d9aaa");
           addScorePopup(rock.x + rock.size / 2, rock.y, 100);
+          if (rock.hasPotion) dropPotion(rock);
           rocks.splice(i, 1);
           score += 100;
           soundIronBreak();
@@ -292,6 +325,7 @@ function update(dt) {
   updateParticles(dt);
   updateScorePopups(dt);
   updateDamagePopups(dt);
+  updateHealPopups(dt);
 }
 
 function addScorePopup(x, y, points) {
@@ -347,6 +381,15 @@ function updateDamagePopups(dt) {
   }
 }
 
+function updateHealPopups(dt) {
+  for (let i = healPopups.length - 1; i >= 0; i -= 1) {
+    const popup = healPopups[i];
+    popup.life -= dt;
+    popup.y -= 38 * dt;
+    if (popup.life <= 0) healPopups.splice(i, 1);
+  }
+}
+
 function draw() {
   ctx.save();
   if (shake > 0) ctx.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
@@ -356,8 +399,23 @@ function draw() {
   particles.forEach(p => { ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.size, p.size); });
   drawScorePopups();
   drawDamagePopups();
+  drawHealPopups();
   drawPlayer();
   drawHud();
+  ctx.restore();
+}
+
+function drawHealPopups() {
+  ctx.save();
+  ctx.font = "bold 25px monospace";
+  ctx.textAlign = "center";
+  for (const popup of healPopups) {
+    ctx.globalAlpha = Math.min(1, popup.life * 2);
+    ctx.fillStyle = "#12172f";
+    ctx.fillText("HP +50", popup.x + 2, popup.y + 2);
+    ctx.fillStyle = "#54e36b";
+    ctx.fillText("HP +50", popup.x, popup.y);
+  }
   ctx.restore();
 }
 
@@ -503,7 +561,7 @@ function drawItem(item) {
     ctx.fillStyle = "#b87022";
     ctx.fillRect(x + 2, y + 25, 9, 7);
     ctx.fillRect(x + s - 11, y + 25, 9, 7);
-  } else {
+  } else if (item.type === "glove") {
     ctx.fillStyle = "#ed3d59";
     ctx.fillRect(x + 10, y + 2, 18, 20);
     ctx.fillRect(x + 5, y + 8, 28, 18);
@@ -511,6 +569,15 @@ function drawItem(item) {
     ctx.fillRect(x + 12, y + 25, 15, 10);
     ctx.fillStyle = "#ff8a9b";
     ctx.fillRect(x + 9, y + 7, 8, 6);
+  } else {
+    ctx.fillStyle = "#f4f1df";
+    ctx.fillRect(x + 11, y + 1, 12, 7);
+    ctx.fillStyle = "#a8b7c2";
+    ctx.fillRect(x + 9, y + 7, 16, 5);
+    ctx.fillStyle = "#43c85a";
+    ctx.fillRect(x + 5, y + 12, 24, 19);
+    ctx.fillStyle = "#b8f3c1";
+    ctx.fillRect(x + 9, y + 15, 7, 11);
   }
   if (isItemNearby(item)) {
     ctx.fillStyle = "#12172f";
@@ -546,6 +613,13 @@ function drawRock(rock) {
     ctx.fillRect(x + s*.25, y + s*.12, s*.25, s*.12);
     ctx.fillStyle = "#202736";
     ctx.fillRect(x + s*.55, y + s*.55, s*.25, s*.23);
+    if (rock.hasPotion) {
+      ctx.fillStyle = "#43c85a";
+      ctx.fillRect(x + s*.41, y + s*.2, s*.18, s*.6);
+      ctx.fillRect(x + s*.2, y + s*.41, s*.6, s*.18);
+      ctx.fillStyle = "#b8f3c1";
+      ctx.fillRect(x + s*.45, y + s*.24, s*.07, s*.2);
+    }
   } else {
     ctx.fillStyle = "#5a4036";
     ctx.fillRect(x + s*.1, y, s*.75, s);
@@ -622,6 +696,9 @@ function soundMetalCrash() {
 }
 function soundItemGet() {
   [392, 523, 659].forEach((f, i) => tone(f, .16, "square", .045, i * .07));
+}
+function soundHeal() {
+  [330, 440, 554, 659].forEach((f, i) => tone(f, .18, "triangle", .055, i * .065));
 }
 function soundHelmetBreak() {
   [520, 390, 260].forEach((f, i) => tone(f, .18, "square", .06, i * .05));
