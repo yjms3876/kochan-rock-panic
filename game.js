@@ -16,7 +16,7 @@ const ui = {
 const W = canvas.width;
 const H = canvas.height;
 const GROUND_Y = 466;
-const keys = { left: false, right: false };
+const keys = { left: false, right: false, punch: false };
 let state = "title";
 let rocks = [];
 let items = [];
@@ -33,6 +33,17 @@ let shake = 0;
 let soundOn = true;
 let audio = null;
 let bgmTimer = null;
+let gameOverTimer = null;
+let combo = 0;
+let bestCombo = 0;
+let comboTime = 0;
+let feverCharge = 0;
+let feverTime = 0;
+let rapidTime = 0;
+let hitStop = 0;
+let effects = [];
+let walkTime = 0;
+const RULES = { punchInterval: 0.25, comboWindow: 2, feverTarget: 12, feverDuration: 6, rapidDuration: 5 };
 
 const player = {
   x: 450, y: GROUND_Y - 78, w: 54, h: 78,
@@ -41,6 +52,10 @@ const player = {
 };
 
 function resetGame() {
+  clearTimeout(gameOverTimer);
+  keys.left = keys.right = keys.punch = false;
+  combo = bestCombo = comboTime = feverCharge = feverTime = rapidTime = hitStop = walkTime = 0;
+  effects = [];
   rocks = [];
   items = [];
   particles = [];
@@ -82,20 +97,23 @@ function gameOver(ironHit = false) {
   else soundCrash();
   stopBgm();
   const final = Math.floor(score);
-  let high = Number(localStorage.getItem("kochanRockPanicHigh") || 0);
-  if (final > high) {
-    high = final;
+  let high = final;
+  try {
+    high = Math.max(final, Number(localStorage.getItem("kochanRockPanicHigh") || 0) || 0);
     localStorage.setItem("kochanRockPanicHigh", String(high));
-  }
+  } catch { /* Play remains available when storage is blocked. */ }
   ui.finalScore.textContent = String(final).padStart(5, "0");
   ui.highScore.textContent = String(high).padStart(5, "0");
-  setTimeout(() => ui.gameOverPanel.classList.remove("hidden"), 650);
+  document.getElementById("bestCombo").textContent = bestCombo;
+  gameOverTimer = setTimeout(() => {
+    if (state === "gameover") ui.gameOverPanel.classList.remove("hidden");
+  }, 650);
 }
 
 function punch() {
   if (state !== "playing" || player.punchCooldown > 0 || player.defeated) return;
   player.punchTime = 0.16;
-  player.punchCooldown = 0.34;
+  player.punchCooldown = RULES.punchInterval;
   soundPunch();
 }
 
@@ -112,6 +130,7 @@ function spawnRock() {
     speed: 125 + Math.random() * 85 + difficulty * 190,
     iron,
     hasPotion,
+    bounceVelocity: 0,
     spin: Math.random() * Math.PI * 2,
     spinSpeed: (Math.random() - 0.5) * 2.5,
   });
@@ -132,7 +151,7 @@ function dropPotion(rock) {
 }
 
 function spawnItem() {
-  const type = Math.random() < 0.5 ? "helmet" : "glove";
+  const type = ["helmet", "glove", "rapid"][Math.floor(Math.random() * 3)];
   const size = 38;
   items.push({
     type,
@@ -149,10 +168,7 @@ function spawnItem() {
 function getItem() {
   if (state !== "playing" || player.defeated) return;
   const pickupBox = {
-    x: player.x - 36,
-    y: player.y - 30,
-    w: player.w + 72,
-    h: player.h + 66,
+    x: player.x, y: player.y, w: player.w, h: player.h,
   };
   let nearestIndex = -1;
   let nearestDistance = Infinity;
@@ -173,15 +189,18 @@ function getItem() {
     player.helmet = true;
   } else if (item.type === "glove") {
     player.gloveHits = 3;
+  } else if (item.type === "rapid") {
+    rapidTime = RULES.rapidDuration;
   } else {
-    player.health = Math.min(150, player.health + 50);
+    const healed = Math.min(50, 150 - player.health);
+    player.health += healed;
     healPopups.push({
       x: player.x + player.w / 2,
       y: player.y + 8,
-      life: 1,
+      life: 1, healed,
     });
   }
-  const itemColor = item.type === "helmet" ? "#ffd447" : item.type === "glove" ? "#ed3d59" : "#43c85a";
+  const itemColor = item.type === "helmet" || item.type === "rapid" ? "#ffd447" : item.type === "glove" ? "#ed3d59" : "#43c85a";
   makeDebris(item.x + item.size / 2, item.y + item.size / 2, itemColor);
   items.splice(nearestIndex, 1);
   if (item.type === "potion") soundHeal();
@@ -206,8 +225,8 @@ function getRockDamage(rock) {
 }
 
 function takeRockDamage(rock) {
+  if (feverTime > 0 || player.invulnerable > 0) return;
   if (absorbRockHit(rock)) return;
-  if (player.invulnerable > 0) return;
   const damage = getRockDamage(rock);
   player.health = Math.max(0, player.health - damage);
   damagePopups.push({
@@ -236,16 +255,25 @@ function update(dt) {
     return;
   }
 
+  effects.forEach(effect => { effect.life -= dt; });
+  effects = effects.filter(effect => effect.life > 0);
+  // Only the part of this frame outside fever consumes the item timer.
+  rapidTime = Math.max(0, rapidTime - Math.max(0, dt - feverTime));
+  feverTime = Math.max(0, feverTime - dt);
+  comboTime = Math.max(0, comboTime - dt);
+  if (comboTime === 0) combo = 0;
   elapsed += dt;
   score += dt * 10;
   player.punchTime = Math.max(0, player.punchTime - dt);
   player.punchCooldown = Math.max(0, player.punchCooldown - dt);
   player.invulnerable = Math.max(0, player.invulnerable - dt);
+  if (keys.punch && (rapidTime > 0 || feverTime > 0)) punch();
 
   let direction = 0;
   if (keys.left) direction -= 1;
   if (keys.right) direction += 1;
   if (direction !== 0) {
+    walkTime += dt * 15;
     player.facing = direction;
     player.x += direction * player.speed * dt;
   }
@@ -280,37 +308,32 @@ function update(dt) {
     }
   }
 
+  getItem();
+
   const body = { x: player.x + 8, y: player.y + 5, w: player.w - 16, h: player.h - 5 };
-  const punchBoxes = getPunchBoxes();
 
   for (let i = rocks.length - 1; i >= 0; i -= 1) {
     const rock = rocks[i];
-    rock.y += rock.speed * dt;
+    if (rock.bounceVelocity < 0) {
+      rock.y += rock.bounceVelocity * dt;
+      rock.bounceVelocity = Math.min(0, rock.bounceVelocity + 850 * dt);
+    } else rock.y += rock.speed * dt;
     rock.spin += rock.spinSpeed * dt;
     const hitbox = { x: rock.x + 5, y: rock.y + 5, w: rock.size - 10, h: rock.size - 10 };
 
-    if (player.punchTime > 0 && punchBoxes.some(box => overlaps(box, hitbox))) {
-      if (rock.iron) {
-        if (player.gloveHits > 0) {
-          player.gloveHits -= 1;
-          makeDebris(rock.x + rock.size / 2, rock.y + rock.size / 2, "#8d9aaa");
-          addScorePopup(rock.x + rock.size / 2, rock.y, 100);
-          if (rock.hasPotion) dropPotion(rock);
-          rocks.splice(i, 1);
-          score += 100;
-          soundIronBreak();
-          continue;
+    if (player.punchTime > 0 && getPunchBoxes().some(box => overlaps(box, hitbox))) {
+      if (rock.iron && player.gloveHits === 0 && feverTime === 0) {
+        if (rock.bounceVelocity >= 0) {
+          rock.bounceVelocity = -430;
+          rock.y = Math.min(rock.y, getPunchBoxes()[0].y - rock.size + 6);
+          effects.push({ x: rock.x + rock.size / 2, y: rock.y + rock.size, life: .25 });
+          tone(720, .09, "triangle", .04);
         }
-        takeRockDamage(rock);
-        rocks.splice(i, 1);
-        if (state !== "playing") return;
         continue;
       }
-      makeDebris(rock.x + rock.size / 2, rock.y + rock.size / 2, "#8e684b");
-      addScorePopup(rock.x + rock.size / 2, rock.y, 75);
+      if (rock.iron && feverTime === 0) player.gloveHits -= 1;
+      destroyRock(rock);
       rocks.splice(i, 1);
-      score += 75;
-      soundBreak();
       continue;
     }
 
@@ -332,14 +355,41 @@ function addScorePopup(x, y, points) {
   scorePopups.push({ x, y, points, life: 0.9 });
 }
 
+function destroyRock(rock) {
+  combo += 1;
+  bestCombo = Math.max(bestCombo, combo);
+  comboTime = RULES.comboWindow;
+  const multiplier = combo >= 10 ? 2 : combo >= 5 ? 1.5 : 1;
+  const points = (rock.iron ? 100 : 75) * multiplier;
+  score += points;
+  addScorePopup(rock.x + rock.size / 2, rock.y, points);
+  makeDebris(rock.x + rock.size / 2, rock.y + rock.size / 2, rock.iron ? "#c5e6ee" : "#e4ab68");
+  effects.push({ x: rock.x + rock.size / 2, y: rock.y + rock.size / 2, life: .25 });
+  hitStop = .035;
+  shake = rock.size >= 60 ? 4 : 2;
+  if (rock.hasPotion) dropPotion(rock);
+  if (rock.iron) soundIronBreak();
+  else soundBreak();
+  tone(390 + Math.min(combo, 16) * 35, .1, "triangle", .035);
+  if (feverTime === 0) {
+    feverCharge += 1;
+    if (feverCharge >= RULES.feverTarget) {
+      feverCharge = 0;
+      feverTime = RULES.feverDuration;
+      [523, 659, 784, 1047].forEach((note, i) => tone(note, .2, "square", .04, i * .08));
+    }
+  }
+}
+
+// The luminous punch and its collision area use the same rectangle.
 function getPunchBoxes() {
-  const overheadBox = {
-    x: player.facing > 0 ? player.x + 40 : player.x - 4,
-    y: player.y - 38,
-    w: 18,
-    h: 92,
-  };
-  return [overheadBox];
+  const powered = feverTime > 0;
+  const width = powered ? 100 : 42;
+  return [{
+    x: player.x + player.w / 2 - width / 2 + player.facing * (powered ? 12 : 18),
+    y: player.y - (powered ? 100 : 54),
+    w: width, h: powered ? 151 : 105,
+  }];
 }
 
 function overlaps(a, b) {
@@ -401,8 +451,11 @@ function draw() {
   drawDamagePopups();
   drawHealPopups();
   drawPlayer();
-  drawHud();
+  drawRapidGauge();
+  drawPunch();
+  drawEffects();
   ctx.restore();
+  drawHud();
 }
 
 function drawHealPopups() {
@@ -412,9 +465,9 @@ function drawHealPopups() {
   for (const popup of healPopups) {
     ctx.globalAlpha = Math.min(1, popup.life * 2);
     ctx.fillStyle = "#12172f";
-    ctx.fillText("HP +50", popup.x + 2, popup.y + 2);
+    ctx.fillText(`HP +${popup.healed}`, popup.x + 2, popup.y + 2);
     ctx.fillStyle = "#54e36b";
-    ctx.fillText("HP +50", popup.x, popup.y);
+    ctx.fillText(`HP +${popup.healed}`, popup.x, popup.y);
   }
   ctx.restore();
 }
@@ -451,19 +504,25 @@ function drawScorePopups() {
 
 function drawBackground() {
   const sky = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
-  sky.addColorStop(0, "#4b7ec9");
-  sky.addColorStop(1, "#80b8df");
+  sky.addColorStop(0, "#459cde");
+  sky.addColorStop(1, "#c2edf0");
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, W, GROUND_Y);
 
   ctx.fillStyle = "rgba(255,255,255,.75)";
   [[80,90],[620,60],[780,160]].forEach(([x,y], index) => {
+    x = (x + elapsed * (4 + index)) % (W + 120) - 60;
     const s = index === 1 ? 1.25 : 1;
     ctx.fillRect(x, y + 16*s, 92*s, 22*s);
     ctx.fillRect(x + 20*s, y, 48*s, 25*s);
   });
 
-  ctx.fillStyle = "#477b6d";
+  ctx.fillStyle = "#92c6b7";
+  for (let x = -80; x < W; x += 240) {
+    ctx.beginPath(); ctx.moveTo(x, 380); ctx.lineTo(x + 140, 225);
+    ctx.lineTo(x + 290, 380); ctx.fill();
+  }
+  ctx.fillStyle = "#609d83";
   ctx.fillRect(0, 360, W, 106);
   ctx.fillStyle = "#3d6b60";
   for (let x = 0; x < W; x += 64) {
@@ -487,6 +546,11 @@ function drawPlayer() {
   ctx.save();
   const x = Math.round(player.x);
   const y = Math.round(player.y);
+  ctx.fillStyle = "rgba(18,48,52,.22)";
+  ctx.beginPath(); ctx.ellipse(x + 27, GROUND_Y + 8, 35, 8, 0, 0, Math.PI * 2); ctx.fill();
+  if (feverTime > 0) {
+    ctx.shadowColor = "#ffe974"; ctx.shadowBlur = 18;
+  }
   if (player.defeated) {
     ctx.translate(x + 10, GROUND_Y - 15);
     ctx.rotate(-Math.PI / 2);
@@ -494,6 +558,26 @@ function drawPlayer() {
   } else {
     drawKochan(x, y, player.facing);
   }
+  ctx.restore();
+}
+
+function drawRapidGauge() {
+  if (state !== "playing" || rapidTime <= 0) return;
+  const x = Math.max(8, Math.min(W - 128, player.x + player.w / 2 - 60));
+  const y = player.y - 89;
+  const paused = feverTime > 0;
+  const blinking = !paused && rapidTime <= 1 && Math.floor(rapidTime * 8) % 2 === 0;
+  ctx.save();
+  ctx.fillStyle = "rgba(18,23,47,.9)";
+  ctx.fillRect(x, y, 120, 33);
+  ctx.textAlign = "center";
+  ctx.font = "bold 12px monospace";
+  ctx.fillStyle = blinking ? "#fff" : "#ffe974";
+  ctx.fillText(paused ? "連打キープ中" : `連打 あと${rapidTime.toFixed(1)}秒`, x + 60, y + 14);
+  ctx.fillStyle = "#344268";
+  ctx.fillRect(x + 6, y + 21, 108, 6);
+  ctx.fillStyle = blinking ? "#fff" : "#ffe974";
+  ctx.fillRect(x + 6, y + 21, 108 * rapidTime / RULES.rapidDuration, 6);
   ctx.restore();
 }
 
@@ -523,27 +607,23 @@ function drawKochan(x, y, facing) {
   ctx.fillRect(x + 17, y + 55, 22, 7);
   ctx.fillStyle = "#f0ba91";
   ctx.fillRect(x, y + 53, 8, 8);
-  if (player.punchTime > 0) {
-    const shoulderX = facing > 0 ? x + 43 : x + 1;
-    const fistX = facing > 0 ? x + 39 : x - 3;
-    ctx.fillRect(shoulderX, y + 6, 10, 50);
-    ctx.fillStyle = player.gloveHits > 0 ? "#ed3d59" : "#f0ba91";
-    ctx.fillRect(fistX, y - 8, 18, 16);
-    if (player.gloveHits > 0) {
-      ctx.fillStyle = "#9c1735";
-      ctx.fillRect(fistX + 3, y + 5, 12, 5);
+  if (player.punchTime === 0) {
+    const armX = facing > 0 ? x + 46 : x - 4;
+    ctx.fillRect(armX, y + 52, 10, 16);
+    if (player.gloveHits > 0 || feverTime > 0) {
+      ctx.fillStyle = feverTime > 0 ? "#ffe974" : "#ed3d59";
+      ctx.fillRect(armX - 3, y + 57, 16, 16);
     }
-  } else {
-    ctx.fillRect(x + 46, y + 52, 8, 18);
   }
+  const stride = state === "playing" && keys.left !== keys.right ? Math.round(Math.sin(walkTime) * 5) : 0;
   ctx.fillStyle = "#e4bc32";
   ctx.fillRect(x + 10, y + 67, 34, 9);
   ctx.fillStyle = "#f0ba91";
-  ctx.fillRect(x + 13, y + 76, 10, 12);
-  ctx.fillRect(x + 34, y + 76, 10, 12);
+  ctx.fillRect(x + 13, y + 69 + stride, 10, 9);
+  ctx.fillRect(x + 34, y + 69 - stride, 10, 9);
   ctx.fillStyle = "#923267";
-  ctx.fillRect(x + 6, y + 86, 19, 7);
-  ctx.fillRect(x + 32, y + 86, 19, 7);
+  ctx.fillRect(x + 6, y + 76 + stride, 19, 7);
+  ctx.fillRect(x + 32, y + 76 - stride, 19, 7);
 }
 
 function drawItem(item) {
@@ -569,6 +649,18 @@ function drawItem(item) {
     ctx.fillRect(x + 12, y + 25, 15, 10);
     ctx.fillStyle = "#ff8a9b";
     ctx.fillRect(x + 9, y + 7, 8, 6);
+  } else if (item.type === "rapid") {
+    ctx.fillStyle = "#24375d";
+    ctx.fillRect(x + 1, y + 1, s - 2, s - 2);
+    ctx.strokeStyle = "#ffe974";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x + 1, y + 1, s - 2, s - 2);
+    ctx.fillStyle = "#ffe974";
+    ctx.beginPath();
+    ctx.moveTo(x + 21, y + 3); ctx.lineTo(x + 8, y + 22);
+    ctx.lineTo(x + 18, y + 22); ctx.lineTo(x + 14, y + 35);
+    ctx.lineTo(x + 31, y + 15); ctx.lineTo(x + 21, y + 15);
+    ctx.closePath(); ctx.fill();
   } else {
     ctx.fillStyle = "#f4f1df";
     ctx.fillRect(x + 11, y + 1, 12, 7);
@@ -579,22 +671,43 @@ function drawItem(item) {
     ctx.fillStyle = "#b8f3c1";
     ctx.fillRect(x + 9, y + 15, 7, 11);
   }
-  if (isItemNearby(item)) {
-    ctx.fillStyle = "#12172f";
-    ctx.fillRect(x - 10, y - 27, s + 20, 19);
-    ctx.fillStyle = "#fff4c7";
-    ctx.font = "bold 14px monospace";
-    ctx.textAlign = "center";
-    ctx.fillText("SHIFT", x + s / 2, y - 13);
-  }
   ctx.restore();
 }
 
-function isItemNearby(item) {
-  return overlaps(
-    { x: player.x - 36, y: player.y - 30, w: player.w + 72, h: player.h + 66 },
-    { x: item.x, y: item.y, w: item.size, h: item.size },
-  );
+function drawPunch() {
+  if (player.punchTime <= 0 || player.defeated) return;
+  const box = getPunchBoxes()[0];
+  ctx.save();
+  const powered = feverTime > 0;
+  ctx.fillStyle = powered ? "rgba(255,235,130,.4)" : "rgba(233,255,255,.38)";
+  ctx.fillRect(box.x, box.y, box.w, box.h);
+  ctx.strokeStyle = powered ? "#ffe974" : "#d5fbff";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(box.x + 1, box.y + 1, box.w - 2, box.h - 2);
+  ctx.fillStyle = "#f0ba91";
+  ctx.fillRect(box.x + box.w / 2 - 5, box.y + 25, 10, box.h - 25);
+  ctx.fillStyle = powered ? "#ffe974" : player.gloveHits > 0 ? "#ed3d59" : "#ffd0a3";
+  ctx.fillRect(box.x, box.y, box.w, powered ? 48 : 29);
+  ctx.fillStyle = "rgba(255,255,255,.6)";
+  ctx.fillRect(box.x + 5, box.y + 5, box.w - 10, 6);
+  ctx.restore();
+}
+
+function drawEffects() {
+  ctx.save();
+  for (const effect of effects) {
+    ctx.globalAlpha = effect.life / .25;
+    const radius = 12 + (1 - effect.life / .25) * 32;
+    ctx.strokeStyle = "#fff3aa"; ctx.lineWidth = 4;
+    for (let i = 0; i < 8; i += 1) {
+      const angle = i * Math.PI / 4;
+      ctx.beginPath();
+      ctx.moveTo(effect.x + Math.cos(angle) * radius * .5, effect.y + Math.sin(angle) * radius * .5);
+      ctx.lineTo(effect.x + Math.cos(angle) * radius, effect.y + Math.sin(angle) * radius);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
 }
 
 function drawRock(rock) {
@@ -655,18 +768,44 @@ function drawHud() {
   ctx.fillText(`HELMET × ${player.helmet ? 1 : 0}`, 27, 125);
   ctx.fillStyle = player.gloveHits > 0 ? "#ff7b90" : "#8f9cc5";
   ctx.fillText(`GLOVE  × ${player.gloveHits}`, 146, 125);
-  if (state === "playing" && elapsed < 7) {
-    ctx.fillStyle = "rgba(18,23,47,.72)";
-    ctx.fillRect(W - 257, 14, 243, 43);
-    ctx.fillStyle = "#eef6ff";
-    ctx.font = "bold 15px monospace";
-    ctx.fillText("SHIFTでアイテムをゲット！", W - 247, 41);
+  ctx.fillStyle = "rgba(18,23,47,.85)";
+  ctx.fillRect(W - 292, 13, 278, 80);
+  const active = feverTime > 0;
+  const warning = active && feverTime < 2;
+  ctx.fillStyle = warning && Math.floor(feverTime * 6) % 2 === 0 ? "#fff" : "#ffe974";
+  ctx.font = "bold 18px monospace";
+  ctx.fillText(active ? `FEVER! あと ${Math.ceil(feverTime)} 秒` : `FEVER  ${feverCharge} / 12`, W - 278, 41);
+  ctx.fillStyle = "#344268"; ctx.fillRect(W - 278, 56, 248, 19);
+  ctx.fillStyle = active ? "#ffe974" : "#52ddcc";
+  ctx.fillRect(W - 278, 56, 248 * (active ? feverTime / RULES.feverDuration : feverCharge / RULES.feverTarget), 19);
+  if (combo > 1 && state === "playing") {
+    ctx.textAlign = "center";
+    ctx.font = "bold 30px monospace";
+    ctx.fillStyle = "#173650";
+    ctx.fillText(`${combo} 連続！`, W / 2 + 2, 48);
+    ctx.fillStyle = "#fff3ae";
+    ctx.fillText(`${combo} 連続！`, W / 2, 46);
+    ctx.font = "bold 16px monospace";
+    ctx.fillText(`得点 ×${combo >= 10 ? 2 : combo >= 5 ? 1.5 : 1}`, W / 2, 70);
+    ctx.fillRect(W / 2 - 60, 81, 120 * comboTime / RULES.comboWindow, 4);
+    ctx.textAlign = "left";
+  }
+  if (active && state === "playing") {
+    ctx.strokeStyle = warning && Math.floor(feverTime * 6) % 2 === 0 ? "#fff" : "#ffe974";
+    ctx.lineWidth = 7; ctx.strokeRect(4, 4, W - 8, H - 8);
+    ctx.fillStyle = "#173650"; ctx.fillRect(W / 2 - 194, H - 43, 388, 30);
+    ctx.fillStyle = "#fff3ae"; ctx.font = "bold 17px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("無敵！ 鉄岩もまとめてふっとばせ！", W / 2, H - 22);
+    ctx.textAlign = "left";
   }
 }
 
 function initAudio() {
-  if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
-  if (audio.state === "suspended") audio.resume();
+  try {
+    if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === "suspended") audio.resume().catch(() => {});
+  } catch { audio = null; }
 }
 
 function tone(freq, duration, type = "square", volume = .045, when = 0) {
@@ -715,7 +854,7 @@ function startBgm() {
   let index = 0;
   const play = () => {
     if (state !== "playing" || !soundOn) return;
-    tone(notes[index % notes.length], .14, "square", .025);
+    tone(notes[index % notes.length] * (feverTime > 0 ? 1.5 : 1), .14, "square", .025);
     if (index % 2 === 0) tone(notes[index % notes.length] / 2, .18, "triangle", .025);
     index += 1;
   };
@@ -732,25 +871,26 @@ ui.startButton.addEventListener("click", startGame);
 ui.retryButton.addEventListener("click", startGame);
 
 window.addEventListener("keydown", event => {
-  if (["ArrowLeft", "ArrowRight", "Space", "ShiftLeft", "ShiftRight"].includes(event.code)) event.preventDefault();
+  if (["ArrowLeft", "ArrowRight", "Space"].includes(event.code)) event.preventDefault();
   if (event.code === "ArrowLeft") keys.left = true;
   if (event.code === "ArrowRight") keys.right = true;
-  if (event.code === "Space" && !event.repeat) punch();
-  if ((event.code === "ShiftLeft" || event.code === "ShiftRight") && !event.repeat) getItem();
+  if (event.code === "Space") { keys.punch = true; if (!event.repeat) punch(); }
   if (event.code === "Enter" && state === "gameover") startGame();
 });
 
 window.addEventListener("keyup", event => {
   if (event.code === "ArrowLeft") keys.left = false;
   if (event.code === "ArrowRight") keys.right = false;
+  if (event.code === "Space") keys.punch = false;
 });
 
-window.addEventListener("blur", () => { keys.left = false; keys.right = false; });
+window.addEventListener("blur", () => { keys.left = keys.right = keys.punch = false; });
 
 function loop(time) {
   const dt = Math.min((time - lastTime) / 1000 || 0, .033);
   lastTime = time;
-  update(dt);
+  if (hitStop > 0) hitStop = Math.max(0, hitStop - dt);
+  else update(dt);
   draw();
   requestAnimationFrame(loop);
 }

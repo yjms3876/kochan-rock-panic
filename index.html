@@ -2,33 +2,35 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#18264a" />
     <title>こーちゃんのロックパニック！</title>
-    <link rel="stylesheet" href="styles.css?v=6" />
+    <link rel="stylesheet" href="styles.css?v=8" />
   </head>
   <body>
     <main class="game-shell">
+      <header class="game-heading"><span class="brand-mark">★</span><div><p>KOCHAN’S ARCADE</p><h1>こーちゃんのロックパニック！</h1></div><span class="edition">爽快パンチ！</span></header>
       <section class="screen-frame" aria-label="ゲーム画面">
         <canvas id="gameCanvas" width="960" height="540"></canvas>
 
         <div id="startPanel" class="overlay-panel">
           <p class="small-title">ROCK PANIC</p>
-          <h2>こーちゃんを<br />まもれ！</h2>
-          <p>岩をよけて、パンチでこわせ！<br /><strong>鉄の岩には気をつけろ！</strong></p>
+          <h2>ためて、はじけて、<br />ぶっとばせ！</h2>
+          <p>SPACEでパンチ！ 稲妻を取ると5秒間連打！<br /><strong>12個こわすと、無敵のフィーバー！</strong></p>
           <button id="startButton" class="pixel-button main-button" type="button">ゲームスタート</button>
         </div>
 
         <div id="gameOverPanel" class="overlay-panel hidden">
           <p class="small-title danger">GAME OVER</p>
           <h2>こーちゃんが<br />たおれた！</h2>
-          <p>スコア <strong id="finalScore">00000</strong><br />ハイスコア <strong id="highScore">00000</strong></p>
+          <p class="result-note">もう一度、コンボに挑戦！</p>
+          <p>スコア <strong id="finalScore">00000</strong><br />ハイスコア <strong id="highScore">00000</strong><br />最高コンボ <strong id="bestCombo">0</strong> 連続</p>
           <button id="retryButton" class="pixel-button main-button" type="button">もういちど</button>
         </div>
       </section>
 
-      <p class="keyboard-help"><kbd>←</kbd> <kbd>→</kbd> 移動　<kbd>SPACE</kbd> パンチ　<kbd>SHIFT</kbd> アイテム取得</p>
+      <p class="keyboard-help"><kbd>←</kbd> <kbd>→</kbd> 移動　<kbd>SPACE</kbd> パンチ（稲妻・FEVER中は長押しで連打）　<span>アイテムは触れてゲット！</span></p>
     </main>
-    <script src="game.js?v=6"></script>
+    <script src="game.js?v=8"></script>
   </body>
 </html>
